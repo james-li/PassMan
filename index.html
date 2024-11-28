@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PassMan</title>
+    <style>
+        #keyInputModal {
+            position: fixed;
+            top: 30%;
+            left: 30%;
+            width: 40%;
+            background-color: white;
+            border: 1px solid black;
+            padding: 20px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div>
+        <label for="queryServer">服务器：</label>
+        <input id="queryServer" type="text" placeholder="请输入服务器">
+        <label for="queryProtocol">访问方式：</label>
+        <select id="queryProtocol">
+            <option value="">全部</option>
+            <option value="www">www</option>
+            <option value="ssh">ssh</option>
+            <option value="mysql">mysql</option>
+        </select>
+        <button id="queryRows">查询</button>
+        <button id="resetRows">重置</button>
+    </div>
+    <div>
+        <button id="loadDatabase">加载</button>
+        <button id="addRow">新增</button>
+        <button id="deleteRows">删除</button>
+        <button id="saveRows">保存</button>
+    </div>
+    <table id="passwordTable" border="1" style="width: 100%; margin-top: 20px;">
+        <thead>
+        <tr>
+            <th>服务器</th>
+            <th>访问方式</th>
+            <th>访问地址</th>
+            <th>用户名</th>
+            <th>密码</th>
+            <th><input type="checkbox" id="selectAllCheckbox"> 全选</th>
+        </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<div id="keyInputModal">
+    <h3>请输入加密密钥</h3>
+    <label>第一次输入：</label><input id="keyInput1" type="password"><br>
+    <label>再次确认：</label><input id="keyInput2" type="password"><br>
+    <button id="confirmKeyButton">确认</button>
+</div>
+
+<script src="renderer.js"></script>
+</body>
+</html>
