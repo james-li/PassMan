@@ -1,114 +1,260 @@
-const { ipcRenderer } = require('electron');
+const {ipcRenderer} = require('electron');
 
-// 全局变量保存分页信息
-let currentPage = 1;
-let rowsPerPage = 5;
 
-async function showPassword(id, button) {
-    const passwordSpan = button.closest('td').querySelector('.password-hidden');
-    if (passwordSpan.textContent === '******') {
-        const decryptedPassword = await ipcRenderer.invoke('decrypt-password', id);
-        passwordSpan.textContent = decryptedPassword; // 显示明文密码
-        button.textContent = '🔒'; // 切换图标为隐藏
+let allRows = new Map();
+
+
+async function togglePasswordVisibility(event) {
+    const button = event.target;
+    const passwordCell = button.closest('tr').querySelector('.password-cell');
+    const isHidden = passwordCell.textContent === '******';
+
+    if (isHidden) {
+        passwordCell.textContent = passwordCell.dataset.password; // 显示明文密码
+        button.textContent = '隐藏';
     } else {
-        passwordSpan.textContent = '******'; // 隐藏明文密码
-        button.textContent = '👁️'; // 切换回显示图标
+        passwordCell.textContent = '******'; // 隐藏密码
+        button.textContent = '显示';
     }
 }
 
 
-async function copyPassword(id) {
-    const passwordSpan = document.querySelector(`tr input[data-id="${id}"]`).closest('td').querySelector('.password-hidden');
-    let passwordToCopy = passwordSpan.textContent;
-
-    // 如果密码是隐藏状态，先解密
-    if (passwordToCopy === '******') {
-        passwordToCopy = await ipcRenderer.invoke('decrypt-password', id);
-    }
-
+async function copyPasswordToClipboard(event) {
+    const button = event.target;
+    const passwordCell = button.closest('tr').querySelector('.password-cell');
+    let passwordToCopy = passwordCell.dataset.password;
     // 将密码复制到剪贴板
     navigator.clipboard.writeText(passwordToCopy).then(() => {
         alert('密码已复制到剪贴板！');
     });
 }
 
+function toggleEditRow(event) {
+    const button = event.target;
+    const tr = button.closest('tr');
+    const rowId = tr.querySelector('input[type="checkbox"]').dataset.id;
 
+    if (button.textContent === '编辑') {
+        // 切换为编辑状态
+        const inputCells = tr.querySelectorAll('td.editable');
+        const passwordCell = tr.querySelector('td.password-cell');
+        const password = passwordCell.dataset.password;
 
-async function checkAndLoadCredentials() {
-    try {
-        const { projectId, credentials } = await ipcRenderer.invoke('load-credentials');
-        if (credentials.length > 0) {
-            alert(`数据加载成功！项目 ID：${projectId}`);
-            renderTable(credentials);
-        } else {
-            alert('该项目暂无记录！');
-        }
-    } catch (error) {
-        if (error.includes('加密密钥未设置')) {
-            await promptAndSetEncryptionKey(); // 提示用户输入密钥
-        } else {
-            alert(error); // 其他错误提示
-        }
+        inputCells.forEach((cell) => {
+            const text = cell.textContent;
+            cell.innerHTML = `<input type="text" class="editable" style="width: 95%; box-sizing: border-box;"  value="${text}">`;
+        });
+        passwordCell.innerHTML = `<input type="password" class="password-cell"  value="${password}">`;
+        button.textContent = '确认';
+        tr.querySelector(".show-password").disabled = true;
+        tr.querySelector(".copy-password").disabled = true;
+        tr.querySelector(".delete-row").disabled = true;
+
+    } else {
+        // 更新 allRows 数据
+        const inputCells = tr.querySelectorAll('input.editable');
+        const passwordCell = tr.querySelector('input.password-cell');
+        const row = {
+            id: rowId,
+            server: inputCells[0].value,
+            protocol: inputCells[1].value,
+            url: inputCells[2].value,
+            username: inputCells[3].value,
+            password: passwordCell.value
+        };
+        tr.innerHTML = `
+            <td><input type="checkbox" data-id="${row.id}">${row.id}</td>
+            <td class="editable">${row.server}</td>
+            <td class="editable">${row.protocol}</td>
+            <td class="editable">${row.url}</td>
+            <td class="editable">${row.username}</td>
+            <td class="password-cell" data-password="${row.password}">******</td>
+            <td>
+                <button class="show-password">显示</button>
+                <button class="copy-password">复制</button>
+                <button class="edit-row">编辑</button>
+                <button class="delete-row">删除</button>
+            </td>            
+        `;
+        addTableEventListeners(tr);
+        allRows.set(parseInt(rowId, 10), row);
+        button.textContent = '编辑';
+        tr.querySelector(".show-password").disabled = false;
+        tr.querySelector(".copy-password").disabled = false;
+        tr.querySelector(".delete-row").disabled = false;
+
     }
 }
 
-// 提示用户输入密钥并设置
-async function promptAndSetEncryptionKey() {
-    const userKey = prompt('请输入加密密钥：');
-    if (!userKey) {
-        alert('加密密钥不能为空！');
-        return;
-    }
+function deleteRow(event) {
+    const tr = event.target.closest('tr');
+    const rowId = tr.querySelector('input[type="checkbox"]').dataset.id;
 
-    try {
-        const projectId = await ipcRenderer.invoke('set-encryption-key', userKey);
-        alert(`密钥设置成功！项目 ID：${projectId}`);
-        await checkAndLoadCredentials(); // 重新加载数据
-    } catch (error) {
-        alert(error); // 提示错误信息
-        await promptAndSetEncryptionKey(); // 递归重新提示用户输入密钥
-    }
+    // 从 allRows 删除记录
+    allRows.delete(parseInt(rowId, 10));
+
+    // 从表格中移除行
+    tr.remove();
 }
+
 
 // 页面加载时初始化
 document.addEventListener('DOMContentLoaded', async () => {
-    await checkAndLoadCredentials(); // 检查并加载数据
+    try {
+        await loadCredentials();
+    } catch (error) {
+        console.error('初始化加密密钥界面失败:', error);
+    }
 });
 
 
+function showKeyInputModal(hasRecords) {
+    document.getElementById('keyInput1').value = "";
+    document.getElementById('keyInput2').value = "";
+    const createOrVerifyDiv = document.getElementById('createOrVerify');
+    const passwordVerifyDiv = document.getElementById('passwordVerify');
+
+    if (hasRecords) {
+        // 如果 encrypt_keys 表有记录
+        createOrVerifyDiv.innerHTML = '<h3 style="text-align: center;">请输入密钥</h3>';
+        passwordVerifyDiv.style.display = 'none'; // 隐藏确认密钥输入框
+    } else {
+        // 如果 encrypt_keys 表没有记录
+        createOrVerifyDiv.innerHTML = '<h3 style="text-align: center;">新建密码数据库，请输入加密密钥</h3>';
+        passwordVerifyDiv.style.display = 'block'; // 显示确认密钥输入框
+    }
+
+    // 显示模态框
+    document.getElementById('keyInputModal').style.display = 'block';
+
+    // 添加确认和取消按钮的事件处理
+}
+
+async function loadCredentials() {
+    // 调用主进程检测 encrypt_keys 表是否有记录
+    const hasRecords = await ipcRenderer.invoke('check-encrypt-keys'); // 返回布尔值
+    showKeyInputModal(hasRecords);
+    setupKeyInputHandlers(hasRecords);
+}
+
+
+function setupKeyInputHandlers(hasRecords) {
+    const confirmButton = document.getElementById('confirmKeyButton');
+    const cancelButton = document.getElementById('cancelKeyButton');
+
+    confirmButton.addEventListener('click', async () => {
+        const key1 = document.getElementById('keyInput1').value.trim();
+        const key2 = document.getElementById('keyInput2').value.trim();
+        if (!key1) {
+            alert('密钥不能为空！');
+            return;
+        }
+
+        if (!hasRecords) {
+            // 如果是新建密钥，验证两次输入是否一致
+            if (key1 !== key2) {
+                alert('两次输入的密钥不一致，请重新输入！');
+                return;
+            }
+        }
+
+        document.getElementById('keyInputModal').style.display = 'none';
+        try {
+            const projectId = await ipcRenderer.invoke('check-encryption-key', key1);
+            console.log('项目 ID:', projectId);
+
+            // 密钥验证成功，加载凭据数据
+            const rows = await ipcRenderer.invoke('load-credentials', projectId);
+            console.log('加载的凭据数据:', rows);
+            if (rows.length > 0) {
+                console.log(`数据加载成功！项目 ID：${rows[0].project_id}`);
+                allRows.clear(); // 清空之前的数据
+                rows.forEach(row => {
+                    allRows.set(row.id, row); // 将数据加入 Map，id 为 key
+                });
+
+                // 更新 rows 以渲染到表格
+                renderTable(rows);
+            } else {
+                console.log('该项目暂无记录！');
+            }
+
+            // 启用按钮
+            document.getElementById('resetKey').disabled = false;
+            document.getElementById('addRow').disabled = false;
+            document.getElementById('deleteRows').disabled = false;
+            document.getElementById('saveRows').disabled = false;
+        } catch (error) {
+            alert(`加载失败：${error}`);
+        }
+
+        cancelButton.addEventListener('click', () => {
+            // 隐藏模态框
+            document.getElementById('keyInputModal').style.display = 'none';
+        });
+    });
+}
+
+document.getElementById('cancelKeyButton').addEventListener('click', () => {
+    document.getElementById('keyInputModal').style.display = 'none';
+});
 
 
 document.getElementById('loadDatabase').addEventListener('click', async () => {
-    const filePath = await ipcRenderer.invoke('load-database');
-    if (filePath) {
-        document.getElementById('keyInputModal').style.display = 'block';
+    try {
+        const filePath = await ipcRenderer.invoke('load-database');
+        if (filePath != null) {
+            await loadCredentials()
+            document.getElementById('resetKey').disabled = true;
+            document.getElementById('addRow').disabled = true;
+            document.getElementById('deleteRows').disabled = true;
+            document.getElementById('saveRows').disabled = true;
+        }
+
+    } catch (error) {
+        alert("加载数据库失败: " + error.message)
     }
 });
 
-document.getElementById('confirmKeyButton').addEventListener('click', () => {
-    const key1 = document.getElementById('keyInput1').value;
-    const key2 = document.getElementById('keyInput2').value;
+document.getElementById('resetKey').addEventListener('click', async () => {
+    showKeyInputModal(false);
+    const confirmButton = document.getElementById('confirmKeyButton');
+    const cancelButton = document.getElementById('cancelKeyButton');
 
-    if (!key1 || !key2) {
-        alert('密钥不能为空！');
-        return;
-    }
+    confirmButton.addEventListener('click', async () => {
+        const key1 = document.getElementById('keyInput1').value.trim();
+        const key2 = document.getElementById('keyInput2').value.trim();
+        if (!key1) {
+            alert('密钥不能为空！');
+            return;
+        }
 
-    if (key1 !== key2) {
-        alert('两次输入的密钥不一致，请重试！');
-        return;
-    }
+        if (key1 !== key2) {
+            alert('两次输入的密钥不一致，请重新输入！');
+            return;
+        }
 
-    ipcRenderer.send('set-encryption-key', key1);
-    document.getElementById('keyInputModal').style.display = 'none';
-    loadCredentials();
-});
+        document.getElementById('keyInputModal').style.display = 'none';
+        try {
+            await ipcRenderer.invoke("reset-encryption-key", key1);
+            await ipcRenderer.invoke("save-credentials", Array.from(allRows.values()));
 
-function loadCredentials() {
-    ipcRenderer.invoke('load-credentials').then((rows) => {
-        renderTable(rows);
+            // 启用按钮
+            document.getElementById('resetKey').disabled = false;
+            document.getElementById('addRow').disabled = false;
+            document.getElementById('deleteRows').disabled = false;
+            document.getElementById('saveRows').disabled = false;
+        } catch (error) {
+            alert(`重置密钥失败：${error}`);
+        }
     });
-}
+    cancelButton.addEventListener('click', () => {
+        // 隐藏模态框
+        document.getElementById('keyInputModal').style.display = 'none';
+    });
+
+});
+
 
 function renderTable(rows) {
     const tbody = document.querySelector('#passwordTable tbody');
@@ -117,115 +263,146 @@ function renderTable(rows) {
     rows.forEach((row) => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td>${row.server}</td>
-            <td>${row.protocol}</td>
-            <td>${row.url}</td>
-            <td>${row.username}</td>
+            <td><input type="checkbox" data-id="${row.id}">${row.id}</td>
+            <td class="editable">${row.server}</td>
+            <td class="editable">${row.protocol}</td>
+            <td class="editable">${row.url}</td>
+            <td class="editable">${row.username}</td>
+            <td class="password-cell" data-password="${row.password}">******</td>
             <td>
-                <span class="password-hidden">******</span>
-                <span class="password-actions">
-                    <button onclick="showPassword(${row.id}, this)">👁️</button>
-                    <button onclick="copyPassword(${row.id})">📋</button>
-                </span>
-            </td>
-                        <td><input type="checkbox" data-id="${row.id}"></td>
+                <button class="show-password">显示</button>
+                <button class="copy-password">复制</button>
+                <button class="edit-row">编辑</button>
+                <button class="delete-row">删除</button>
+            </td>            
         `;
         tbody.appendChild(tr);
-
-        // 监听复选框状态变化，更新全选复选框
-        const checkbox = tr.querySelector('input[type="checkbox"]');
-        checkbox.addEventListener('change', updateSelectAllCheckbox);
+        addTableEventListeners(tr); // 绑定按钮事件
     });
 
     // 初始化全选状态
-    updateSelectAllCheckbox();
+    // updateSelectAllCheckbox();
 }
 
-
-document.getElementById('addRow').addEventListener('click', async () => {
-    const tbody = document.querySelector('#passwordTable tbody');
-
-    // 获取协议集合
-    const protocols = await ipcRenderer.invoke('get-protocols');
-
-    // 创建新行
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-        <td><input type="text" placeholder="服务器"></td>
-        <td>
-            <select>
-                ${protocols.map(protocol => `<option value="${protocol}">${protocol}</option>`).join('')}
-            </select>
-        </td>
-        <td><input type="text" placeholder="访问地址"></td>
-        <td><input type="text" placeholder="用户名"></td>
-        <td><input type="password" placeholder="密码"></td>
-        <td><input type="checkbox"></td>
-    `;
-    tbody.prepend(tr);
-
-    // 自动保存新增行数据
-    const inputs = tr.querySelectorAll('input, select');
-    inputs.forEach(input => {
-        input.addEventListener('blur', () => saveRowData(tr));
+function addTableEventListeners(tr) {
+    tr.querySelectorAll('.show-password').forEach((button) => {
+        button.addEventListener('click', togglePasswordVisibility);
     });
-});
 
-function saveRowData(tr) {
-    // 获取用户输入的值
-    const data = {
-        server: tr.children[0].children[0].value.trim(),
-        protocol: tr.children[1].children[0].value,
-        url: tr.children[2].children[0].value.trim(),
-        username: tr.children[3].children[0].value.trim(),
-        password: tr.children[4].children[0].value.trim(),
-    };
+    tr.querySelectorAll('.copy-password').forEach((button) => {
+        button.addEventListener('click', copyPasswordToClipboard);
+    });
 
-    // 校验必填字段
-    if (!data.server || !data.url || !data.password) {
-        alert('服务器、访问地址和密码不能为空！');
-        return;
-    }
+    tr.querySelectorAll('.edit-row').forEach((button) => {
+        button.addEventListener('click', toggleEditRow);
+    });
 
-    // 调用后端接口保存数据
-    ipcRenderer.send('add-credential', data);
+    tr.querySelectorAll('.delete-row').forEach((button) => {
+        button.addEventListener('click', deleteRow);
+    });
 }
 
-ipcRenderer.on('credential-added', () => {
-    loadCredentials(); // 重新加载表格数据
+
+document.getElementById('addRow').addEventListener('click', () => {
+    ipcRenderer.send("set-changed");
+    // 在 tbody 中插入一行新的 tr
+    const tbody = document.querySelector('#passwordTable tbody');
+    const tr = document.createElement('tr');
+    // 计算 allRows 中的最大 id
+    const maxId = Math.max(...Array.from(allRows.keys()), 0); // 如果 allRows 为空，返回 0
+
+    // 生成新行的 id
+    const newId = maxId + 1;
+    // 创建空记录
+    const emptyRow = {
+        id: newId,
+        server: '',
+        protocol: '',
+        url: '',
+        username: '',
+        password: '',
+    };
+    // 添加到 allRows
+    allRows.set(newId, emptyRow);
+    // 创建新行的单元格，并在其中添加输入框
+    tr.innerHTML = `
+        <td><input type="checkbox" data-id="${newId}">${newId}</td>        
+        <td><input type="text" class="editable" style="width: 95%; box-sizing: border-box;" placeholder="服务器"></td>
+        <td><input type="text" class="editable" style="width: 95%; box-sizing: border-box;" placeholder="协议" value="www"></td>
+        <td><input type="text" class="editable" style="width: 95%; box-sizing: border-box;" placeholder="访问地址"></td>
+        <td><input type="text" class="editable" style="width: 95%; box-sizing: border-box;" placeholder="用户名"></td>
+        <td><input type="password" class="password-cell" style="width: 95%; box-sizing: border-box;" placeholder="密码"></td>
+        <td>
+            <button class="show-password">显示</button>
+            <button class="copy-password">复制</button>
+            <button class="edit-row">确认</button>
+            <button class="delete-row">删除</button>
+        </td>             
+    `;
+    addTableEventListeners(tr);
+    tbody.appendChild(tr); // 将新行添加到表格中
+
 });
 
 
 document.getElementById('deleteRows').addEventListener('click', () => {
+    ipcRenderer.send("set-changed");
     const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
     if (checkboxes.length === 0) {
-        alert('请选择需要删除的记录！');
+        alert('请选择要删除的记录！');
         return;
     }
-    if (!confirm('确定要删除选中的记录吗？')) return;
 
-    const ids = Array.from(checkboxes).map(cb => cb.dataset.id);
-    ipcRenderer.send('delete-credentials', ids);
+    // 获取选中记录的 id
+    const idsToDelete = Array.from(checkboxes).map(checkbox => parseInt(checkbox.dataset.id, 10));
+    idsToDelete.forEach(id => allRows.delete(id));
+    renderTable(Array.from(allRows.values())); // 重新渲染表格
 });
 
-ipcRenderer.on('credentials-deleted', () => {
-    loadCredentials();
-});
 
 document.getElementById('queryRows').addEventListener('click', () => {
-    const server = document.getElementById('queryServer').value;
-    const protocol = document.getElementById('queryProtocol').value;
-    ipcRenderer.send('query-credentials', { server, protocol });
+    const searchServer = document.getElementById('queryServer').value.trim().toLowerCase();
+    const searchProtocol = document.getElementById('queryProtocol').value; // 获取协议（包括 'all'）
+
+    // 过滤出匹配的行
+    const filteredRows = Array.from(allRows.values()).filter(row => {
+        const matchesServer = row.server.toLowerCase().includes(searchServer);
+        const matchesProtocol = searchProtocol === 'all' || row.protocol.toLowerCase() === searchProtocol.toLowerCase();
+        return matchesServer && matchesProtocol;
+    });
+
+    renderTable(filteredRows); // 渲染匹配的结果
 });
 
-ipcRenderer.on('query-result', (event, rows) => {
-    renderTable(rows);
+
+document.getElementById('saveRows').addEventListener('click', async () => {
+    try {
+        //TODO： allRows过滤server/url/username/password 为空的记录
+        // 过滤无效记录并更新 allRows
+        const validRows = Array.from(allRows.entries()) // 获取键值对 [id, row]
+            .filter(([, row]) => {
+                // 保留所有字段非空的记录
+                return row.server.trim() !== '' &&
+                    row.url.trim() !== '' &&
+                    row.username.trim() !== '' &&
+                    row.password.trim() !== '';
+            });
+
+        // 更新 allRows 以移除无效记录
+        allRows = new Map(validRows);
+        await ipcRenderer.invoke('save-credentials', Array.from(allRows.values())); // 调用主进程保存数据
+        // alert('保存成功！');
+        renderTable(Array.from(allRows.values()));
+    } catch (error) {
+        alert(`保存失败：${error}`);
+    }
 });
+
 
 document.getElementById('resetRows').addEventListener('click', () => {
     document.getElementById('queryServer').value = '';
-    document.getElementById('queryProtocol').value = '';
-    loadCredentials();
+    document.getElementById('queryProtocol').value = 'all';
+    renderTable(Array.from(allRows.values()))
 });
 
 // 全选复选框逻辑
@@ -236,10 +413,4 @@ document.getElementById('selectAllCheckbox').addEventListener('change', (event) 
     });
 });
 
-// 更新全选状态
-function updateSelectAllCheckbox() {
-    const checkboxes = document.querySelectorAll('#passwordTable tbody input[type="checkbox"]');
-    const allChecked = Array.from(checkboxes).every(checkbox => checkbox.checked);
-    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
-    selectAllCheckbox.checked = allChecked;
-}
+

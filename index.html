@@ -18,47 +18,111 @@
 </head>
 <body>
 <div id="app">
-    <div>
-        <label for="queryServer">服务器：</label>
-        <input id="queryServer" type="text" placeholder="请输入服务器">
-        <label for="queryProtocol">访问方式：</label>
-        <select id="queryProtocol">
-            <option value="">全部</option>
-            <option value="www">www</option>
-            <option value="ssh">ssh</option>
-            <option value="mysql">mysql</option>
-        </select>
-        <button id="queryRows">查询</button>
-        <button id="resetRows">重置</button>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+        <!-- 前6个元素 -->
+        <table style="table-layout: fixed; border-collapse: collapse;">
+            <tr>
+                <td style="text-align: left; padding-right: 10px;">
+                    <label for="queryServer">服务器：</label>
+                    <input id="queryServer" type="text" placeholder="请输入服务器"
+                           style="width: 200px; height: 28px; font-size: 14px;">
+                </td>
+                <td style="text-align: left; padding-right: 10px;">
+                    <label for="queryProtocol">访问方式：</label>
+                    <select id="queryProtocol" style="width: 100px; height: 28px; font-size: 14px;">
+                        <option value="all">全部</option>
+                        <option value="www">www</option>
+                        <option value="ssh">ssh</option>
+                        <option value="mysql">mysql</option>
+                    </select>
+                </td>
+                <td style="text-align: center; padding-right: 10px;">
+                    <button id="queryRows" style="font-size: 14px; padding: 5px 10px;">查询</button>
+                </td>
+                <td style="text-align: center; padding-right: 10px;">
+                    <button id="resetRows" style="font-size: 14px; padding: 5px 10px;">重置</button>
+                </td>
+            </tr>
+        </table>
+
+        <!-- 后4个按钮 -->
+        <table style="table-layout: fixed; border-collapse: collapse;">
+            <tr>
+                <td style="text-align: center; padding-right: 10px;">
+                    <button id="loadDatabase" style="font-size: 14px; padding: 5px 10px;">加载</button>
+                </td>
+                <td style="text-align: center; padding-right: 10px;">
+                    <button id="resetKey" style="font-size: 14px; padding: 5px 10px;" disabled>密钥</button>
+                </td>
+                <td style="text-align: center; padding-right: 10px;">
+                    <button id="addRow" style="font-size: 14px; padding: 5px 10px;" disabled>新增</button>
+                </td>
+                <td style="text-align: center; padding-right: 10px;">
+                    <button id="deleteRows" style="font-size: 14px; padding: 5px 10px;" disabled>删除</button>
+                </td>
+                <td style="text-align: center;">
+                    <button id="saveRows" style="font-size: 14px; padding: 5px 10px;" disabled>保存</button>
+                </td>
+            </tr>
+        </table>
     </div>
-    <div>
-        <button id="loadDatabase">加载</button>
-        <button id="addRow">新增</button>
-        <button id="deleteRows">删除</button>
-        <button id="saveRows">保存</button>
+
+    <!-- 分隔线 -->
+    <hr>
+
+    <div id="pwdTable" style="text-align: left; table-layout: fixed;">
+        <table id="passwordTable" border="1" style="width: 100%; margin-top: 20px">
+            <!-- 定义列宽 -->
+            <colgroup>
+                <col style="width: 10%;">
+                <col style="width: 10%;">
+                <col style="width: 10%;">
+                <col style="width: 20%;">
+                <col style="width: 15%;">
+                <col style="width: 15%;">
+                <col style="width: 20%;">
+            </colgroup>
+            <thead>
+            <tr>
+                <th><input type="checkbox" id="selectAllCheckbox">选择</th>
+                <th>服务器</th>
+                <th>访问方式</th>
+                <th>访问地址</th>
+                <th>用户名</th>
+                <th>密码</th>
+                <th>操作</th>
+            </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
     </div>
-    <table id="passwordTable" border="1" style="width: 100%; margin-top: 20px;">
-        <thead>
-        <tr>
-            <th>服务器</th>
-            <th>访问方式</th>
-            <th>访问地址</th>
-            <th>用户名</th>
-            <th>密码</th>
-            <th><input type="checkbox" id="selectAllCheckbox"> 全选</th>
-        </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
 </div>
 
-<div id="keyInputModal">
-    <h3>请输入加密密钥</h3>
-    <label>第一次输入：</label><input id="keyInput1" type="password"><br>
-    <label>再次确认：</label><input id="keyInput2" type="password"><br>
-    <button id="confirmKeyButton">确认</button>
+<div id="keyInputModal"
+     style="display: none; position: fixed; top: 30%; left: 30%; width: 40%; background-color: white; border: 1px solid black; padding: 20px; z-index: 1000; border-radius: 8px;">
+    <div id="createOrVerify"><h3 style="text-align: center;">新建密码数据库，请输入加密密钥</h3></div>
+    <!--    <label>密钥：</label><br>-->
+    <label for="keyInput1">密钥：</label><input type="password" id="keyInput1"
+                                               style="width: 100%; margin-bottom: 10px; padding: 8px; border-radius: 4px; border: 1px solid #ccc;"><br>
+    <div id="passwordVerify">
+        <!--        <label>确认密钥：</label><br>-->
+        <label for="keyInput2">确认密钥：</label><input type="password" id="keyInput2"
+                                                       style="width: 100%; margin-bottom: 20px; padding: 8px; border-radius: 4px; border: 1px solid #ccc;"><br>
+    </div>
+    <div style="display: flex; justify-content: space-between;">
+        <button id="confirmKeyButton"
+                style="width: 48%; padding: 10px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            确认
+        </button>
+        <button id="cancelKeyButton"
+                style="width: 48%; padding: 10px; background-color: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            取消
+        </button>
+    </div>
 </div>
 
-<script src="renderer.js"></script>
+
+<script src="./renderer.js"></script>
 </body>
 </html>
