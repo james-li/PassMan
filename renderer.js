@@ -2,7 +2,7 @@ const {ipcRenderer} = require('electron');
 
 
 let allRows = new Map();
-
+let defaultButtonBgColor = null;
 
 async function togglePasswordVisibility(event) {
     const button = event.target;
@@ -97,11 +97,26 @@ function deleteRow(event) {
     tr.remove();
 }
 
+async function refreshProtocols() {
+    const protocolSelect = document.getElementById('queryProtocol');
+    const protocols = await ipcRenderer.invoke('get-protocols');
+    while (protocolSelect.options.length > 0) {
+        protocolSelect.remove(0); // 删除第一个选项
+    }
+    protocols.forEach(protocol => {
+        const option = document.createElement('option');
+        option.value = protocol;
+        option.textContent = protocol;
+        protocolSelect.appendChild(option);
+    });
+}
 
 // 页面加载时初始化
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         await loadCredentials();
+        await refreshProtocols();
+        defaultButtonBgColor = document.getElementById('saveRows').style.backgroundColor;
     } catch (error) {
         console.error('初始化加密密钥界面失败:', error);
     }
@@ -302,9 +317,13 @@ function addTableEventListeners(tr) {
     });
 }
 
+function setChanged() {
+    ipcRenderer.send("set-changed");
+    document.getElementById("saveRows").style.backgroundColor = "gray";
+}
 
 document.getElementById('addRow').addEventListener('click', () => {
-    ipcRenderer.send("set-changed");
+    setChanged();
     // 在 tbody 中插入一行新的 tr
     const tbody = document.querySelector('#passwordTable tbody');
     const tr = document.createElement('tr');
@@ -346,7 +365,7 @@ document.getElementById('addRow').addEventListener('click', () => {
 
 
 document.getElementById('deleteRows').addEventListener('click', () => {
-    ipcRenderer.send("set-changed");
+    setChanged();
     const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
     if (checkboxes.length === 0) {
         alert('请选择要删除的记录！');
@@ -393,6 +412,8 @@ document.getElementById('saveRows').addEventListener('click', async () => {
         await ipcRenderer.invoke('save-credentials', Array.from(allRows.values())); // 调用主进程保存数据
         // alert('保存成功！');
         renderTable(Array.from(allRows.values()));
+        await refreshProtocols();
+        document.getElementById('saveRows').style.backgroundColor = defaultButtonBgColor;
     } catch (error) {
         alert(`保存失败：${error}`);
     }

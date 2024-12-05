@@ -175,7 +175,7 @@ ipcMain.handle('get-protocols', async () => {
         const defaultProtocols = ['www', 'ssh', 'mysql'];
         credentialDb.getDistinctProtocols((protocols) => {
             // 使用 Set 合并默认协议集合和数据库查询的协议集合
-            const mergedProtocols = Array.from(new Set([...protocols, ...defaultProtocols]));
+            const mergedProtocols = Array.from(new Set(['all', ...protocols, ...defaultProtocols]));
             resolve(mergedProtocols);
         });
     });
