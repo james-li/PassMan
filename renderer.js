@@ -78,6 +78,7 @@ function toggleEditRow(event) {
         `;
         addTableEventListeners(tr);
         allRows.set(parseInt(rowId, 10), row);
+        setChanged();
         button.textContent = '编辑';
         tr.querySelector(".show-password").disabled = false;
         tr.querySelector(".copy-password").disabled = false;
@@ -435,3 +436,23 @@ document.getElementById('selectAllCheckbox').addEventListener('change', (event) 
 });
 
 
+document.getElementById('exportData').addEventListener('click', async () => {
+    const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
+    //checkboxes 为空，提示用户为空，提示用户
+    if (checkboxes.length === 0) {
+        alert('请选择要导出的记录！');
+        return;
+    }
+    //根据选中的checkboxes id，映射到allRows中的记录
+    const selectedRows = Array.from(checkboxes)
+        .map(checkbox => allRows.get(parseInt(checkbox.dataset.id, 10)))
+        .filter(row => row !== undefined);
+    console.log(selectedRows);
+    //selectRows长度为0，提示用户
+    if (selectedRows.length === 0) {
+        alert('请选择要导出的记录！');
+        return;
+    }
+    //将selectRows 传到IpcMain 的export_to_csv方法
+    await ipcRenderer.invoke('export-to-csv', Array.from(selectedRows.values()));
+});

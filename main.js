@@ -3,6 +3,8 @@ const path = require('path');
 const credentialDb = require('./db.js');
 const hashCrypto = require('crypto');
 const aesCrypto = require('crypto-js');
+const fs = require('fs');
+
 
 let mainWindow;
 let encryptionKey = null;
@@ -45,7 +47,7 @@ function createMainWindow() {
 }
 
 
-ipcMain.handle('load-database', async () => {
+ipcMain.handle('load-database', async (filePath) => {
     return new Promise(async (resolve, reject) => {
         try {
             const {filePaths} = await dialog.showOpenDialog({
@@ -61,9 +63,60 @@ ipcMain.handle('load-database', async () => {
         } catch (err) {
             reject(err);
         }
-
     });
 });
+
+
+
+ipcMain.handle('export-to-csv', (event, rows) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            // 调用 showSaveDialog 让用户选择保存路径
+            const { canceled, filePath } = await dialog.showSaveDialog({
+                title: '保存为 CSV 文件',
+                defaultPath: 'export.csv', // 默认文件名
+                filters: [
+                    { name: 'CSV Files', extensions: ['csv'] },
+                    { name: 'All Files', extensions: ['*'] }
+                ]
+            });
+
+            // 如果用户取消保存
+            if (canceled) {
+                return resolve(null);
+            }
+        
+            
+                // 定义标题头
+            const headers = ['id', 'server', 'protocol', 'url', 'username', 'password'];
+
+            // 过滤 rows，仅保留需要的字段
+            const filteredRows = rows.map(row => ({
+                id: row.id,
+                server: row.server,
+                protocol: row.protocol,
+                url: row.url,
+                username: row.username,
+                password: row.password
+            }));
+
+            // 将标题头和数据合并为 CSV 内容
+            const csvContent = [
+                headers.join(','), // 添加标题行
+                ...filteredRows.map(row => headers.map(header => row[header] || '').join(',')) // 按标题顺序排列数据
+            ].join('\n');
+
+            // 写入文件
+            fs.writeFileSync(filePath, csvContent);
+
+            resolve(filePath); // 返回文件路径
+            
+        } catch (err) {
+            reject(`导出 CSV 失败: ${err.message}`);
+        }
+    });
+});
+
 
 ipcMain.handle('check-encrypt-keys', async () => {
     return new Promise((resolve, reject) => {
@@ -193,7 +246,7 @@ ipcMain.handle('decrypt-password', async (event, encryptedPassword) => {
 });
 
 
-ipcMain.handle('save-credentials', async (event, rows) => {
+/*ipcMain.handle('save-credentials', async (event, rows) => {
     return new Promise((resolve, reject) => {
         const deleteSQL = `DELETE
                            FROM credentials
@@ -224,7 +277,55 @@ ipcMain.handle('save-credentials', async (event, rows) => {
                 .catch(err => reject('插入数据失败：' + err.message));
         });
     });
+});*/
+
+ipcMain.handle('save-credentials', async (event, rows) => {
+    return new Promise((resolve, reject) => {
+        const insertOrUpdateSQL = `
+            INSERT INTO credentials (id, project_id, server, protocol, url, username, password, create_at, update_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (id) DO UPDATE SET
+                project_id = excluded.project_id,
+                server = excluded.server,
+                protocol = excluded.protocol,
+                url = excluded.url,
+                username = excluded.username,
+                password = excluded.password,
+                update_at = CURRENT_TIMESTAMP
+        `;
+
+        const insertPromises = rows.map(row => {
+            return new Promise((res, rej) => {
+                // 加密密码
+                const encryptedPassword = aesCrypto.AES.encrypt(row.password, encryptionKey).toString();
+                credentialDb.run(
+                    insertOrUpdateSQL,
+                    [
+                        row.id,                     // id
+                        projectId,                  // project_id
+                        row.server,                 // server
+                        row.protocol,               // protocol
+                        row.url,                    // url
+                        row.username,               // username
+                        encryptedPassword          // encrypted password
+                    ],
+                    (err) => {
+                        if (err) return rej(err);
+                        res();
+                    }
+                );
+            });
+        });
+
+        Promise.all(insertPromises)
+            .then(() => {
+                changed = false; // 保存成功后重置 changed 状态
+                resolve();
+            })
+            .catch(err => reject('保存数据失败：' + err.message));
+    });
 });
+
 
 ipcMain.on("set-changed", () => {
     console.log("data changed");

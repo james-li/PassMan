@@ -13,7 +13,7 @@ function connectDatabase(filePath) {
     }
     db = new sqlite3.Database(filePath, (err) => {
         if (err) throw err;
-        console.log("Connected to database ${filPath}");
+        console.log("Connected to database %s", filePath);
     });
 }
 
