@@ -11,6 +11,10 @@ let encryptionKey = null;
 let projectId = null
 let changed = false;
 
+function isDev() {
+    return !app.isPackaged; // Electron 提供的 `app.isPackaged` 方法可以检测是否为发布模式
+}
+
 function createMainWindow() {
     mainWindow = new BrowserWindow({
         width: 1024,
@@ -23,7 +27,14 @@ function createMainWindow() {
     });
 
 
-    mainWindow.loadFile('index.html');
+    if (isDev()) {
+        // 开发模式加载本地服务器
+        mainWindow.loadURL('http://localhost:5173'); // 替换为你的前端开发服务器地址
+        mainWindow.webContents.openDevTools(); // 自动打开开发者工具
+    } else {
+        // 发布模式加载打包的前端文件
+        mainWindow.loadFile(path.join(__dirname, 'dist/index.html'));
+    }
     credentialDb.connectDatabase('./default.db');
     credentialDb.initializeTables();
     mainWindow.on('close', (event) => {
