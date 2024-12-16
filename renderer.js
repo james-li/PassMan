@@ -295,7 +295,13 @@ function renderTable(rows) {
         tbody.appendChild(tr);
         addTableEventListeners(tr); // 绑定按钮事件
     });
-
+    document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+        checkbox.addEventListener('change', (event) => {
+            if (!event.target.checked) {
+                document.getElementById("selectAllCheckbox").checked = false;
+            }
+        })
+    });
     // 初始化全选状态
     // updateSelectAllCheckbox();
 }
